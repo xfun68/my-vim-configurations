@@ -1,0 +1,226 @@
+" Author    : Joiky.G
+" Contact   : gaoguodong@linekong.com
+"
+" 此脚本用于打开不同文件时
+"   set一些不同的options
+"   保存时自动删除行尾空白，makefile、sh-script不删除只包含'\t'的行（语法问题）
+"   <F5><F6>为c、cpp文件进行单词注释或块注释
+"   <F7><F8>为不同文件执行以行为单位的注释（多行注释时，需按v[V]选中需注释的行）
+"   <F9><F10>分别为单个cpp文件进行编译和执行操作
+"   <F11>为c、cpp查找当前buffer的函数定义
+"   保存cpp文件时，自动添加文件头注释，自动更新最近修改时间
+"
+
+if !exists("*s:AutoBufEnter")
+fun s:AutoBufEnter()
+"    " 使用变量控制（exec不支持范围）
+"    if !exists("b:Comment_Char")
+"        let b:Comment_Char = "\""
+"    endif
+"
+"    " 注释 及取消注释
+"    if &filetype == 'make' || &filetype == 'sh'
+"        let b:Comment_Char = "#"
+"    elseif &filetype == 'plsql' || &filetype == 'sql'
+"        let b:Comment_Char = "--"
+"    elseif &filetype == 'vim'
+"        let b:Comment_Char = "\""
+"    else
+"        let b:Comment_Char = "//"
+"    endif
+
+"    map <F7>    :exec "s:^:" . b:Comment_Char . ":" <CR><ESC> :nohlsearch <CR>
+"    map <F8>    :exec "s:\(\s\{-}\)" . b:Comment_Char ." :\1:" <CR><ESC> :nohlsearch <CR>
+
+    augroup erase_space
+        au!
+        if &filetype == 'make'
+            " 删除任意行尾空格
+            au BufWritePre,FileWritePre * %s/ \+$//e
+            " Makefile类型文件，每4空格转换为'\t'
+            " retab 4
+            " 删除非空白行末尾的空白
+            au BufWritePre,FileWritePre * %s/\(\S\)\s\+$/\1/e
+        elseif &filetype == 'sh'
+            " 删除非空白行末尾的空白
+            au BufWritePre,FileWritePre * %s/\(\S\)\s\+$/\1/e
+            " 删除任意行尾空格
+            au BufWritePre,FileWritePre * %s/ \+$//e
+        else
+            au BufWritePre,FileWritePre * %s/\s\+$//e
+        endif
+    augroup END
+
+    " 注释 及取消注释
+    " 行注释: <F7>注释  <F8>取消注释
+    if &filetype == 'make' || &filetype == 'sh' || &ft == 'awk'
+        map <F7>    :s:^:#: <CR><ESC> :nohlsearch <CR>
+        map <F8>    :s:\(\s\{-}\)#:\1:e <CR><ESC> :nohlsearch <CR>
+    elseif &filetype == 'plsql' || &filetype == 'sql'
+        map <F7>    :s:^:--: <CR><ESC> :nohlsearch <CR>
+        map <F8>    :s:\(\s\{-}\)--:\1:e <CR><ESC> :nohlsearch <CR>
+    elseif &filetype == 'vim'
+        map <F7>    :s:^:": <CR><ESC> :nohlsearch <CR>
+        map <F8>    :s:\(\s\{-}\)":\1:e <CR><ESC> :nohlsearch <CR>
+    elseif &filetype == 'cpp' || &filetype == 'c'
+        map <F7>    :s:^://: <CR><ESC> :nohlsearch <CR>
+        map <F8>    :s:\(\s\{-}\)//:\1:e <CR><ESC> :nohlsearch <CR>
+    else
+        map <F7>    :s:^:#: <CR><ESC> :nohlsearch <CR>
+        map <F8>    :s:\(\s\{-}\)#:\1:e <CR><ESC> :nohlsearch <CR>
+    endif
+
+    " 点、块注释: <F5>注释 <F6>取消注释
+    if &filetype == 'cpp' || &filetype == 'c'
+        iab <buffer> #i    #include
+        iab <buffer> #d    #define
+
+        map <buffer> <F3>    :cn<CR>
+        map <buffer> <F4>    :cp<CR>
+
+        " 正常模式下注释当前单词
+        nnoremap <buffer> <F5>   mzviw<ESC>`<i /* <ESC>ea */ <ESC>`z4l
+        nnoremap <buffer> <F6>   mzl? \/\* <CR>4x/ \*\/ <CR>4x:nohlsearch<CR>`z4h
+
+        " 插入模式下注释当前单词
+        imap <buffer> <F5>   <ESC>l<F5>i
+        imap <buffer> <F6>   <ESC>l<F6>i
+
+        " 可视化模式注释选中区域
+        vnoremap <buffer> <F5>   <ESC>`>a */ <ESC>`<i /* <ESC>3hv`>4l
+        vnoremap <buffer> <F6>   :s, \*\/ ,,<CR>`<v`>4h:s, \/\* ,,<CR>`<v`>
+
+        " 查找当前文件中的函数定义
+        nnoremap <buffer> <F11>   /^\I\i\+.\{-}(\_.\{-}).*<CR>
+
+        " 快捷编译当前cpp文件
+        nnoremap <buffer> <F9>    :w<cr> :exec "!g++ ".expand('%')." -o ".expand('%:t:r')<cr>
+        vmap <buffer> <F9>    <F9>
+        imap <buffer> <F9>    <ESC><F9>
+
+        " 快捷执行与当前cpp同名的可执行文件
+        nnoremap <buffer> <F10>     :exec "!./".expand('%:t:r')<cr>
+        vmap <buffer> <F10>    <F10>
+        imap <buffer> <F10>    <ESC><F10>
+    endif
+endfun
+endif
+
+if !exists("s:AutoComment")
+" cpp文件自动注释
+fun! s:AutoComment()
+    if has("win32")
+        :call append(0, [
+                        \'//============================================================================',
+                        \'// Name           : '.expand('%:t'),
+                        \'// Author         : '.$USER,
+                        \'// Version        : 1.0',
+                        \'// Description    : ',
+                        \'// Last Modified  : '.strftime('%c'),
+                        \'//============================================================================',
+                        \''
+                        \])
+    else
+        :call append(0, [
+                        \'//============================================================================',
+                        \'// Name           : '.expand('%:t'),
+                        \'// Author         : '.$USER,
+                        \'// Version        : 1.0',
+                        \'// Description    : ',
+                        \'// Last Modified  : '.strftime('%Y-%m-%d %T'),
+                        \'//============================================================================',
+                        \''
+                        \])
+    endif
+endfun
+
+fun! s:AutoComment_CPP()
+    let s:new_head_file = 0
+
+    " 前三行为空，认为是新文件
+    if getline(1).getline(2).getline(3) == ''
+        let s:new_head_file = 1
+    endif
+
+    if s:new_head_file == 1
+        :call append(0, [
+                        \'#include "'.expand('%:t:r').'.h"',
+                        \''
+                        \])
+        :call s:AutoComment()
+    elseif getline(1) !~# '^//='
+        :call s:AutoComment()
+    endif
+    unlet! s:new_head_file
+endfun
+
+fun! s:AutoComment_H()
+    let s:new_head_file = 0
+
+    " 前三行为空，认为是新文件
+    if getline(1).getline(2).getline(3) == ''
+        let s:new_head_file = 1
+    endif
+
+    if s:new_head_file == 1
+        :call append(0, [
+                        \'#define __'.toupper(expand('%:t:r')).'_H__',
+                        \'',
+                        \'',
+                        \'',
+                        \'#endif // #define __'.toupper(expand('%:t:r')).'_H__',
+                        \])
+        :call s:AutoComment()
+        :normal 3k
+    elseif getline(1) !~# '^//='
+        :call s:AutoComment()
+    endif
+    unlet! s:new_head_file
+endfun
+
+fun! s:AutoUpdateTime_CPP()
+    let l = line('$') > 10 ? 10 : line('$')
+    let s:cl = col('.')
+    let s:lc = line('.')
+    :exec '1,'.l.'g/Last Modified/s/:.*/: '.strftime('%Y-%m-%d %T').'/e'
+    call cursor(s:lc, s:cl)
+    unlet s:cl s:lc
+endfun
+endif
+
+syntax on
+
+"set nu              " number
+"set sm              " showmatch
+"set ws              " wrapscan
+"set ai              " autoindent
+"set cin             " cindent
+"set sc              " showcmd
+set nu sm ws ai cin nowrap sc incsearch
+"set ts=4            " tabstop
+"set sw=4            " shiftwidth
+"set sts=4           " softtabstop
+set ts=4 sw=4 sts=4
+
+if has("autocmd")
+    " 自动定义文件类型
+    au BufEnter                 *.mk,compile,dylib,exec,ebuild,global,lib setf make
+    au BufEnter                 *.[pP][cC][kK]  setf plsql
+
+    " 通用设置，tab转换为空格
+    au BufEnter                 * set et nolist
+    au FileType make,sh           setlocal list noet
+
+    " cpp类文件自动添加注释头[块]
+"    au BufWrite,FileWritePre    *.h,*.hpp,*.hxx
+"                                \ call s:AutoComment_H()
+"    au BufWrite,FileWritePre    *.cpp,*.cxx,*.c,*.C,*.cc
+"                                \ call s:AutoComment_CPP()
+
+    " 自动更新最后修订时间
+"    au BufWrite,FileWritePre    *.h,*.hpp,*.hxx,*.cpp,*.cxx,*.c,*.C,*.cc
+"                                \ call s:AutoUpdateTime_CPP()
+
+    au BufEnter                 * call s:AutoBufEnter()
+endif " has("autocmd")
+
